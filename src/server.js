@@ -45,8 +45,14 @@ ioServer.on("connection", (socket) => {
         console.log(`User ${socket.nickname} disconnected`);
         updateRoomInfo();
     });
-    socket.on("message", (_msg, _room) => {
-        socket.to(_room).emit("message", `${socket.nickname}: ${_msg}`);
+    socket.on("offer", (offer, roomName) => {
+        socket.to(roomName).emit("offer", offer);
+    });
+    socket.on("answer", (answer, roomName) => {
+        socket.to(roomName).emit("answer", answer);
+    });
+    socket.on("ice", (ice, roomName) => {
+        socket.to(roomName).emit("ice", ice);
     });
 });
 
