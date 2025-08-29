@@ -4,5 +4,21 @@ html(lang="en")
     meta(charset="UTF-8")
     meta(name="viewport" content="width=device-width, initial-scale=1.0")
     title czoom
+    link(rel="stylesheet" href="https://unpkg.com/mvp.css")
   body
-    h1 it works!
+    header
+      h1 czoom
+    main
+      h2 Welcome to czoom
+      form#nickname
+        label Enter your Nickname:
+        input#nickname(type="text" name="nickname" required)
+        button Submit
+      div#room
+        h3
+        ul
+        form
+          input(type="text" id="message" placeholder="Type your message here...")
+          button Send
+
+    script(src="public/js/app.js")
