@@ -1,89 +1,155 @@
 const socket = io();
 
-const welcome = document.querySelector("h2")
-const nickNameDiv = document.querySelector("#nickname");
-const roomNav = document.querySelector("nav");
-const createDiv = document.querySelector("#create");
-const exitBtn = document.querySelector("#exit");
-const roomDiv = document.querySelector("#room");
+const myFace = document.getElementById("myFace");
+const muteBtn = document.getElementById("mute");
+const cameraBtn = document.getElementById("camera");
+const camerasSelect = document.getElementById("cameras");
+const call = document.getElementById("call");
+call.hidden = true;
 
-exitBtn.hidden = true;
-roomDiv.hidden = true;
-let roomName ;
-/**
- * 방 입장
- */
-function handleCreateRoom(event) {
+let myStream;
+let muted = false;
+let cameraOff = false;
+let roomName;
+let myPeerConnection;
+
+// Media controls
+async function getMedia(deviceId) {
+    const initialConstrains = {
+        audio: true,
+        video: {facingMode: "user"},
+    };
+    const cameraConstraints = {
+        audio: true,
+        video: {deviceId: {exact: deviceId}},
+    };
+
+    try {
+        myStream = await navigator.mediaDevices.getUserMedia(
+            deviceId ? cameraConstraints : initialConstrains
+        );
+        myFace.srcObject = myStream;
+        if (!deviceId) {
+            await getCameras();
+        }
+    } catch (e) {
+        console.log(e);
+    }
+}
+
+async function getCameras() {
+    try {
+        const devices =
+            await navigator.mediaDevices.enumerateDevices();
+        const cameras =
+            devices.filter((dev) => dev.kind === "videoinput");
+        cameras.forEach((camera) => {
+            const option = document.createElement("option");
+            option.value = camera.deviceId;
+            option.innerText = camera.label;
+            camerasSelect.appendChild(option);
+        });
+    } catch (e) {
+        console.log(e);
+    }
+}
+
+function handleCameraClick() {
+    myStream
+        .getVideoTracks()
+        .forEach((track) => (track.enabled = !track.enabled));
+    if (cameraOff) {
+        cameraBtn.innerText = "Turn Camera Off";
+        cameraOff = false;
+    } else {
+        cameraBtn.innerText = "Turn Camera On";
+        cameraOff = true;
+    }
+}
+
+function handleMuteClick() {
+    myStream
+        .getAudioTracks()
+        .forEach((track) => (track.enabled = !track.enabled));
+    if (!muted) {
+        muteBtn.innerText = "Unmute";
+        muted = true;
+    } else {
+        muteBtn.innerText = "Mute";
+        muted = false;
+    }
+}
+
+async function handleCameraChange() {
+    await getMedia(camerasSelect.value);
+    if (myPeerConnection) {
+        const videoTrack = myStream.getVideoTracks()[0];
+        const videoSender = myPeerConnection
+            .getSenders()
+            .find((sender) => sender.track.kind === "video");
+        videoSender.replaceTrack(videoTrack);
+    }
+}
+
+// Room Member Controls
+const nicknameDiv = document.getElementById("nickname");
+const roomNav = document.getElementById("roomNav");
+const createDiv = document.getElementById("create");
+const createForm = createDiv.querySelector("form");
+const exitBtn = document.getElementById("exit");
+const welcome = document.getElementById("welcome");
+
+async function handleCreateRoom(event) {
     event.preventDefault();
     const roomInput = createDiv.querySelector("input");
-    enterRoom(roomInput.value, nickNameDiv.querySelector("input").value);
+    enterRoom(roomInput.value, nicknameDiv.querySelector("input").value);
 }
-function enterRoom(_roomName, _nickName) {
+
+async function enterRoom(_roomName, _nickName) {
     if (!_roomName || !_nickName) {
         return alert("방 이름과 닉네임을 입력해주세요.");
     }
-    socket.emit("enter_room", _roomName, _nickName, () => {
-        welcome.innerText = `Welcome to czoom: ${_nickName}`;
-        roomDiv.querySelector("h3").innerText = `방 이름: ${_roomName}`;
+    const initRoom = async () => {
+        welcome.innerText = `Welcome to ${_roomName}: ${_nickName}`;
         roomName = _roomName;
-        exitBtn.hidden = false;
-        roomDiv.hidden = false;
-        nickNameDiv.hidden = true;
+        nicknameDiv.hidden = true;
         createDiv.hidden = true;
+        call.hidden = false;
         roomNav.hidden = true;
+        exitBtn.hidden = false;
+        await getMedia();
+        makeConnection();
+    }
+    await initRoom();
+    socket.emit("enter_room", _roomName, _nickName, () => {
+        console.log(`Entered room: ${_roomName}`);
     });
 }
 
-/**
- * 방 나가기
- */
-function handleExitRoom(event) {
-    event.preventDefault();
-    socket.disconnect();
-    welcome.innerText = `Welcome to czoom`;
-    roomDiv.querySelector("h3").innerText = '';
-    socket.connect();
-    exitBtn.hidden = true;
-    roomDiv.hidden = true;
-    nickNameDiv.hidden = false;
-    createDiv.hidden = false;
-    roomNav.hidden = false;
-}
-
-/**
- * 메세지 추가하기
- */
-function addMessage(message) {
-    const ul = roomDiv.querySelector("ul");
-    const li = document.createElement("li");
-    li.innerText = message;
-    ul.appendChild(li);
-}
-/**
- * 메세지 보내기
- */
-function handleMessageSubmit(event) {
-    event.preventDefault();
-    const messageInput = roomDiv.querySelector("form input");
-    const message = messageInput.value;
-    if (message === "") {
-        return;
-    }
-    socket.emit("message", message, roomName);
-    messageInput.value = "";
-    messageInput.focus();
-    addMessage(`나: ${message}`);
-}
-
-// 소켓 이벤트 리스너
-socket.on("welcome", (nickName) => {
-    addMessage(`${nickName}님이 입장하셨습니다.`);
+// Socket Code
+socket.on("welcome", async (nickname) => {
+    console.log(`user ${nickname} joined`);
+    const offer = await myPeerConnection.createOffer();
+    myPeerConnection.setLocalDescription(offer);
+    console.log("sent the offer");
+    socket.emit("offer", offer, roomName);
 });
-socket.on("bye", (nickName) => {
-    addMessage(`${nickName}님이 퇴장하셨습니다.`);
+socket.on("offer", async (offer) => {
+    myPeerConnection.setRemoteDescription(offer);
+    const answer = await myPeerConnection.createAnswer();
+    myPeerConnection.setLocalDescription(answer);
+    socket.emit("answer", answer, roomName);
 });
-socket.on("message", addMessage);
-socket.on("room_update" , (rooms) => {
+
+socket.on("answer", (answer) => {
+    myPeerConnection.setRemoteDescription(answer);
+});
+
+socket.on("ice", (ice) => {
+    myPeerConnection.addIceCandidate(ice);
+});
+
+socket.on("room_update", (rooms) => {
     const roomList = roomNav.querySelector("ul");
     roomList.innerHTML = ""; // 기존 목록 초기화
     rooms.forEach(room => {
@@ -91,14 +157,45 @@ socket.on("room_update" , (rooms) => {
         const btn = document.createElement("button");
         btn.innerText = `${room.name}(${room.size})`;
         btn.onclick = () => {
-            enterRoom(room.name, nickNameDiv.querySelector("input").value);
+            enterRoom(room.name, nicknameDiv.querySelector("input").value);
         };
         roomList.appendChild(li);
         li.appendChild(btn);
     });
 })
-createDiv.querySelector("form")
-    .addEventListener("submit", handleCreateRoom);
-exitBtn.addEventListener("click", handleExitRoom);
-roomDiv.querySelector("form")
-    .addEventListener("submit", handleMessageSubmit);
+
+// RTC connection
+function makeConnection() {
+    myPeerConnection = new RTCPeerConnection({
+        iceServers: [
+            {
+                urls: [
+                    "stun:stun.l.google.com:19302",
+                    "stun:stun.l.google.com:5349",
+                    "stun:stun1.l.google.com:3478",
+                    "stun:stun1.l.google.com:5349"
+                ]
+            }
+        ]
+    });
+    myPeerConnection.addEventListener("icecandidate", handleIce);
+    myPeerConnection.addEventListener("addstream", handleAddStream);
+    myStream
+        .getTracks()
+        .forEach((track) => myPeerConnection.addTrack(track, myStream));
+}
+
+function handleIce(data) {
+    console.log("sent candidate");
+    socket.emit("ice", data.candidate, roomName);
+}
+
+function handleAddStream(data) {
+    const peerFace = document.getElementById("peerFace");
+    peerFace.srcObject = data.stream;
+}
+
+muteBtn.addEventListener("click", handleMuteClick);
+cameraBtn.addEventListener("click", handleCameraClick);
+camerasSelect.addEventListener("input", handleCameraChange);
+createForm.addEventListener("submit", handleCreateRoom);

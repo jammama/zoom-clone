@@ -7,13 +7,12 @@ html(lang="en")
     link(rel="stylesheet" href="https://unpkg.com/mvp.css")
   body
     header
-      h1 czoom
+      h1#welcome czoom
     main
-      h2 Welcome to czoom
       div#nickname
         label Enter your Nickname:
-        input#nickname(type="text" name="nickname" required)
-      nav(style="margin: auto 0 0 auto")
+        input(type="text" name="nickname" required)
+      nav#roomNav
         h4 Enter a existing room
         ul
       div#create
@@ -23,13 +22,12 @@ html(lang="en")
           input(type="text" id="roomName" name="roomName" required)
           button Submit
       button#exit Exit Room
-      div#room
-        h3
-        ul
-          li test
-        form
-          input(type="text" id="message" placeholder="Type your message here...")
-          button Send
-
+      div#call
+        div#myStream
+          video#myFace(autoplay,playsinline, muted, width="400", height="400")
+          select#cameras
+          video#peerFace(autoplay,playsinline, width="400", height="400")
+          button#mute Mute
+          button#camera Turn Camera Off
     script(src="/socket.io/socket.io.js")
     script(src="public/js/app.js")
