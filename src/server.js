@@ -1,43 +1,54 @@
-import express from 'express';
-import WebSocket from 'ws';
-import http from 'http';
+import express from "express"
+import SocketIO from "socket.io";
+import http from "http";
 const app = express();
 
-app.set('view engine', 'pug');
-app.set('views', __dirname + '/views');
-app.use('/public', express.static(__dirname + '/public'));
-app.get('/', (req, res) => res.render('home'));
 
-console.log('Hello');
-const handleListen = () => console.log(`Listening on localhost:3000`);
+app.set("view engine", "pug");
+app.set("views", __dirname + "/views")
+app.use("/public", express.static(__dirname + "/public"))
+app.get("/", (req, res)=> res.render("home"))
+
+console.log("Hello")
+const handleListen = () => console.log(`Listening on localhost:3000`)
+
 
 const server = http.createServer(app);
-const wss = new WebSocket.Server({ server });
+const ioServer = SocketIO(server);
 
-const handleConnection = (socket) => {
-    console.log('someone connected...: ', socket.id);
-    socket.send('Welcome to czoom ws server');
-};
+ioServer.on("connection", (socket) => {
+    const updateRoomInfo = () => {
+        const {rooms, sids} = ioServer.sockets.adapter;
+        const roomInfoList = [];
+        rooms.keys().forEach(_room => {
+            if ( !Array.from(sids.keys()).includes(_room)) {
+                roomInfoList.push({
+                    name: _room,
+                    size: rooms.get(_room)?.size || 0
+                })
+            }
+        })
+        ioServer.emit("room_update", roomInfoList);
+    };
+    updateRoomInfo();
 
-const sockets = [];
-wss.on('connection', (socket) => {
-    handleConnection(socket);
-    sockets.push(socket);
-
-    socket.on('message', (msg) => {
-        console.log(msg);
-        const message = JSON.parse(msg);
-        switch (message.type) {
-            case 'message':
-                sockets.forEach((aSocket) =>
-                    aSocket.send(`${socket.nickname}: ${message.payload}`)
-                );
-                break;
-            case 'enter_room':
-                socket['nickname'] = message.payload;
-                break;
-        }
+    socket.on("enter_room", (roomName, nickName, callback) => {
+        socket.join(roomName);
+        socket["nickname"] = nickName;
+        socket.to(roomName).emit("welcome", socket.nickname);
+        console.log(`User ${socket.nickname} joined room ${roomName}`);
+        callback()
+        updateRoomInfo();
+    });
+    socket.on("disconnect", () => {
+        socket.to(socket.rooms).emit("bye", socket.nickname);
+        console.log(`User ${socket.nickname} disconnected`);
+        updateRoomInfo();
+    });
+    socket.on("message", (_msg, _room) => {
+        socket.to(_room).emit("message", `${socket.nickname}: ${_msg}`);
     });
 });
+
 
 server.listen(3000, handleListen);
